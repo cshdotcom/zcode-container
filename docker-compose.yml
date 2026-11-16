@@ -28,6 +28,8 @@ services:
       ZCODE_WEB_TOKEN: ${ZCODE_WEB_TOKEN:-}
       # Selkies 远程桌面
       SELKIES_PORT: "7183"
+      # 官方设置：默认 true 绑定 0.0.0.0/[::]（供端口映射；走反向代理时可改 false 仅监听回环）
+      SELKIES_PUBLIC: ${SELKIES_PUBLIC:-true}
       SELKIES_IDLE_TIMEOUT: ${SELKIES_IDLE_TIMEOUT:-900}
       SELKIES_MODE: ${SELKIES_MODE:-websockets}
       SELKIES_ENABLE_DUAL_MODE: ${SELKIES_ENABLE_DUAL_MODE:-true}

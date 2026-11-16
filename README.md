@@ -164,6 +164,7 @@ docker build --build-arg USE_CN_MIRROR=1 \
 接入方式与官方仓库一致（`selkies session --port=7183 --enable-basic-auth=false --enable-https=false --session=openbox`），`SELKIES_ENABLE_HTTPS=false`（加密由用户穿透层负责）。
 
 - **启停**：`desktop-on` / `desktop-off` / `desktop-status`，默认关闭；
+- **绑定地址**：`SELKIES_PUBLIC=true`（默认，官方 `--public` 设置项）使会话服务绑定 `0.0.0.0/[::]` 供端口映射；若在容器前用反向代理接管，可在 `.env` 改 `false` 仅监听回环；
 - **多人同时远程**：所有浏览器连入同一对外端口（默认 47183）——同屏同桌面、输入共享；不开任何多余端口；
 - **空闲自动回收**：会话 15 分钟（`SELKIES_IDLE_TIMEOUT=900`，可改）无操作自动 `desktop-off` 释放资源；置 0 关闭；
 - **白名单清理**：`desktop-off` 只清理自己拉起的会话进程组（Xvfb / Selkies / openbox 都在该进程组内），不误杀常驻 Xvfb :99 与其他系统服务。

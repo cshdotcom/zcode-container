@@ -79,51 +79,64 @@ docker exec "$NAME" healthcheck.sh
 
 step "2. 逐端口验证（通过对外映射端口）"
 body=$(curl -fsS -m 15 "http://127.0.0.1:${EXT_ZCODE}/" 2>/dev/null || true)
-if [ -n "$body" ] && printf '%s' "$body" | head -c 2048 | grep -qi '<!doctype\|<html'; then
-    ok "ZCODE ${EXT_ZCODE}->3030 正常响应（HTTP 200 + HTML）"
-else
-    bad "ZCODE ${EXT_ZCODE}->3030 无有效响应"
-fi
+body_head=${body:0:3000}
+case "$body_head" in
+    *html*|*HTML*|*"<!doctype"*|*"<!DOCTYPE"*)
+        ok "ZCODE ${EXT_ZCODE}->3030 正常响应（HTTP 200 + HTML）" ;;
+    "")
+        bad "ZCODE ${EXT_ZCODE}->3030 无有效响应" ;;
+    *)
+        bad "ZCODE ${EXT_ZCODE}->3030 响应非 HTML（前 200 字节：$(printf '%s' "$body_head" | head -c 200))" ;;
+esac
 
 for p in "$EXT_SPARE1" "$EXT_SPARE2"; do
     if curl -fsS -m 5 "http://127.0.0.1:${p}/" >/dev/null 2>&1; then
         bad "备用端口 ${p} 不应有服务响应（空端口必须为空）"
     else
-        if ss -tln 2>/dev/null | awk '{print $4}' | grep -q ":${p}$"; then
-            ok "备用端口 ${p}：connection refused（预期）且 docker-proxy 处于监听（可绑定状态）"
-        else
-            bad "备用端口 ${p} 未处于可绑定/监听状态"
-        fi
+        listen_ports=$(ss -tln 2>/dev/null | awk '{print $4}' || true)
+        case "$listen_ports" in
+            *":${p}"*)
+                ok "备用端口 ${p}：connection refused（预期）且 docker-proxy 处于监听（可绑定状态）" ;;
+            *)
+                bad "备用端口 ${p} 未处于可绑定/监听状态" ;;
+        esac
     fi
 done
 
 step "3. docker port 输出（对外映射端口全部为非常用端口号，数量恒为四个）"
 docker port "$NAME"
-map_count=$(docker port "$NAME" | wc -l)
+# docker port 每个映射含 IPv4/IPv6 两行，按容器端口去重后计数
+map_count=$(docker port "$NAME" | awk '{print $1}' | sort -u | wc -l)
 if [ "$map_count" -eq 4 ]; then
-    ok "对外映射端口数量 = 4（恒定，不为多人远程新增端口）"
+    ok "对外映射端口数量 = 4（恒定，不为多人远程新增端口；IPv4/IPv6 各一行属正常显示）"
 else
     bad "对外映射端口数量 = ${map_count}（应为 4）"
 fi
-docker port "$NAME" | awk '{print $NF}' | while read -r ep; do
+docker port "$NAME" | awk '{print $1}' | sort -u | while read -r cport; do
+    ep=$(docker port "$NAME" | grep "^${cport} " | awk '{print $NF}' | head -n 1)
     hostport=${ep##*:}
     case "$hostport" in
         80|443|3000|8080|8888) bad "对外端口 ${hostport} 属常用端口，违反端口规划" ;;
-        *) ok "对外端口 ${hostport} 为非常用高位端口" ;;
+        *) ok "对外端口 ${hostport} 为非常用高位端口（容器内 ${cport}）" ;;
     esac
 done
 
 step "4. Edge 无头模式 + CDP 9222 可控；edge-mcp :7123 健康检查"
-docker exec "$NAME" curl -fsS -m 8 http://127.0.0.1:9222/json/version | head -c 200; echo
-docker exec "$NAME" curl -fsS -m 8 http://127.0.0.1:9222/json/version | grep -q webSocketDebuggerUrl \
-    && ok "Edge CDP 9222 可控（/json/version 返回 webSocketDebuggerUrl）" \
-    || bad "Edge CDP 9222 不可控"
-docker exec "$NAME" curl -fsS -m 8 http://127.0.0.1:7123/health | tee /dev/stderr | grep -q '"ok":true' \
-    && ok "edge-mcp :7123 健康检查通过" \
-    || bad "edge-mcp :7123 健康检查失败"
+cdpout=$(docker exec "$NAME" curl -fsS -m 8 http://127.0.0.1:9222/json/version 2>/dev/null || true)
+printf '%s\n' "$cdpout" | head -c 200; echo
+case "$cdpout" in
+    *webSocketDebuggerUrl*) ok "Edge CDP 9222 可控（/json/version 返回 webSocketDebuggerUrl）" ;;
+    *) bad "Edge CDP 9222 不可控" ;;
+esac
+hout=$(docker exec "$NAME" curl -fsS -m 8 http://127.0.0.1:7123/health 2>/dev/null || true)
+printf '%s\n' "$hout"
+case "$hout" in
+    *'"ok":true'*) ok "edge-mcp :7123 健康检查通过" ;;
+    *) bad "edge-mcp :7123 健康检查失败" ;;
+esac
 
 step "5. desktop-on 后 Selkies 网页端出画面端口；双客户端同端口连接；端口数不变"
-map_before=$(docker port "$NAME" | wc -l)
+map_before=$(docker port "$NAME" | awk '{print $1}' | sort -u | wc -l)
 docker exec "$NAME" desktop-on.sh || {
     bad "desktop-on 执行失败"
     docker exec "$NAME" tail -n 30 /var/log/zcode-container/selkies.log || true
@@ -150,7 +163,7 @@ if curl -fsS -m 5 -o /dev/null "http://127.0.0.1:${EXT_SELKIES}/" 2>/dev/null \
     ok "两个客户端同时连入 ${EXT_SELKIES}（同一端口，画面与输入共享）"
 fi
 
-map_after=$(docker port "$NAME" | wc -l)
+map_after=$(docker port "$NAME" | awk '{print $1}' | sort -u | wc -l)
 if [ "$map_after" -eq "$map_before" ] && [ "$map_after" -eq 4 ]; then
     ok "多人同时远程未新增任何映射端口（总数恒为四个）"
 else
@@ -175,9 +188,10 @@ step "8. 空闲自动回收生效（注入短超时 25 秒）"
 docker exec -e SELKIES_IDLE_TIMEOUT=25 "$NAME" desktop-on.sh >/dev/null || bad "desktop-on（空闲回收阶段）执行失败"
 recycled=""
 for _ in $(seq 1 16); do
-    if docker exec "$NAME" desktop-status.sh 2>/dev/null | grep -q "未运行"; then
-        recycled=1; break
-    fi
+    st_out=$(docker exec "$NAME" desktop-status.sh 2>/dev/null || true)
+    case "$st_out" in
+        *"未运行"*) recycled=1; break ;;
+    esac
     sleep 5
 done
 if [ -n "$recycled" ]; then

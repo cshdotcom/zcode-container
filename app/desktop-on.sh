@@ -33,6 +33,8 @@ mkdir -p "$RUNDIR" "$LOGDIR"
 export SELKIES_ENABLE_HTTPS="${SELKIES_ENABLE_HTTPS:-false}"
 export SELKIES_MODE="${SELKIES_MODE:-websockets}"
 export SELKIES_ENABLE_DUAL_MODE="${SELKIES_ENABLE_DUAL_MODE:-true}"
+# 官方设置：--public 使服务绑定 0.0.0.0/[::]（默认 localhost 仅回环，端口映射不可达）
+export SELKIES_PUBLIC="${SELKIES_PUBLIC:-true}"
 
 # 新会话进程组：Xvfb / Selkies / openbox 均在其内，desktop-off 只清理该进程组
 setsid nohup selkies session \
