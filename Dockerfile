@@ -259,7 +259,7 @@ RUN mkdir -p /workspace/preview /data/edge-profile /etc/sing-box \
         /data/extra1 /data/extra2 /data/extra3 \
         /var/log/zcode-container /run/zcode-container
 
-VOLUME ["/workspace", "/root/.zcode", "/data/edge-profile", "/etc/sing-box",
+VOLUME ["/workspace", "/root/.zcode", "/data/edge-profile", "/etc/sing-box", \
         "/data/extra1", "/data/extra2", "/data/extra3"]
 
 # 四个容器内端口（对外映射端口在 .env 中集中定义，一律避开常用端口号）
