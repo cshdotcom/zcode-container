@@ -97,15 +97,29 @@ start_edge_mcp
 start_zcode
 
 log "等待服务就绪（最长 120 秒）..."
+ready=""
 for _ in $(seq 1 60); do
     if curl -fsS -m 3 -o /dev/null http://127.0.0.1:3030/ 2>/dev/null \
        && curl -fsS -m 3 -o /dev/null http://127.0.0.1:7123/health 2>/dev/null \
        && curl -fsS -m 3 -o /dev/null http://127.0.0.1:9222/json/version 2>/dev/null; then
-        log "全部常驻服务已就绪。"
+        ready=1
         break
     fi
     sleep 2
 done
+
+# ZCode 就绪后再写入 MCP 配置（仅当用户未自带配置时；不覆盖已有 /root/.zcode 数据）
+if [ -n "$ready" ] && [ ! -f /root/.zcode/cli/config.json ]; then
+    mcp-register-edge.sh >>"$LOGDIR/mcp-register.log" 2>&1 \
+        && log "已为 ZCode 注册 edge-mcp（/root/.zcode/cli/config.json）" \
+        || log "WARN: edge-mcp 注册失败，可稍后手动执行 mcp-register-edge"
+fi
+
+if [ -n "$ready" ]; then
+    log "全部常驻服务已就绪。"
+else
+    log "WARN: 部分服务 120 秒内未就绪（详见 $LOGDIR/ 各日志；守护循环会继续自动重启）"
+fi
 
 log "容器就绪："
 log "  ZCode 网页端   : 容器内 3030（对外映射端口见 .env，默认 43030）"

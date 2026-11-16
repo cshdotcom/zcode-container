@@ -57,14 +57,24 @@ for _ in $(seq 1 72); do
     if [ "$status" = "unhealthy" ]; then break; fi
     sleep 5
 done
-if [ "$status" = "healthy" ]; then
-    ok "容器 healthy（zcode:3030 / edge-mcp:7123 / edge-cdp:9222 全部通过镜像内置 healthcheck）"
-else
-    bad "容器未 healthy（status=$status）"
-    docker inspect -f '{{json .State.Health.Log}}' "$NAME" | tail -3 || true
-    docker logs "$NAME" | tail -60 || true
+if [ "$status" != "healthy" ]; then
+    echo "  [FAIL] 容器未 healthy（status=$status）—— 诊断信息如下："
+    echo "---- docker inspect Health.Log ----"
+    docker inspect -f '{{json .State.Health.Log}}' "$NAME" | tail -c 2000 || true
+    echo ""
+    echo "---- /var/log/zcode-container/zcode.log（尾部 60 行）----"
+    docker exec "$NAME" sh -c 'tail -n 60 /var/log/zcode-container/zcode.log 2>/dev/null' || true
+    echo "---- /var/log/zcode-container/edge-mcp.log（尾部 20 行）----"
+    docker exec "$NAME" sh -c 'tail -n 20 /var/log/zcode-container/edge-mcp.log 2>/dev/null' || true
+    echo "---- /root/.zcode 目录 ----"
+    docker exec "$NAME" sh -c 'ls -la /root/.zcode /root/.zcode/cli 2>/dev/null; cat /root/.zcode/cli/config.json 2>/dev/null' || true
+    echo "---- 前台复现：zcode --web（端口 3031，30 秒观察窗口）----"
+    docker exec "$NAME" sh -c 'cd /workspace && timeout 30 zcode --web --no-open --host 127.0.0.1 --port 3031 --no-token 2>&1 | tail -n 40; echo "FOREGROUND_DONE"' || true
+    echo "---- 容器主日志（尾部 40 行）----"
+    docker logs --tail 40 "$NAME" || true
     exit 1
 fi
+ok "容器 healthy（zcode:3030 / edge-mcp:7123 / edge-cdp:9222 全部通过镜像内置 healthcheck）"
 docker exec "$NAME" healthcheck.sh
 
 step "2. 逐端口验证（通过对外映射端口）"

@@ -266,9 +266,6 @@ RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh \
         /usr/local/bin/proxy-on.sh /usr/local/bin/proxy-off.sh \
         /usr/local/bin/mcp-register-edge.sh
 
-# ZCode 的 MCP 配置种子（edge-mcp HTTP 端点）；/root/.zcode 为持久化卷，首次挂载时自动带入
-COPY app/zcode-default-config/config.json /root/.zcode/cli/config.json
-
 RUN mkdir -p /workspace/preview /data/edge-profile /etc/sing-box \
         /data/extra1 /data/extra2 /data/extra3 \
         /var/log/zcode-container /run/zcode-container
