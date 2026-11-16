@@ -1,0 +1,62 @@
+# ZCode 自托管 AI 工作容器
+# 启动前：cp .env.example .env （对外端口集中在 .env 中定义）
+
+services:
+  zcode:
+    # 默认使用 CI 推送到 GHCR 的镜像；本地构建见 README「本地构建」
+    image: ghcr.io/cshdotcom/zcode-container:latest
+    # 本地构建（国内加速）：docker compose build --build-arg USE_CN_MIRROR=1
+    # build: .
+
+    container_name: zcode-container
+    restart: unless-stopped
+
+    # 浏览器/桌面共享内存（参考 Selkies 官方镜像 --shm-size=2g）
+    shm_size: "2gb"
+
+    # ---- 端口映射：容器内端口不变（3030/7183/8080/8090），对外一律使用非常用高位端口 ----
+    # ---- 对外端口集中定义在 .env（EXT_*），不在 compose 中硬编码默认值              ----
+    ports:
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_ZCODE_PORT:?请在 .env 中设置 EXT_ZCODE_PORT}:3030"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SELKIES_PORT:?请在 .env 中设置 EXT_SELKIES_PORT}:7183"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SPARE_PORT_1:?请在 .env 中设置 EXT_SPARE_PORT_1}:8080"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SPARE_PORT_2:?请在 .env 中设置 EXT_SPARE_PORT_2}:8090"
+
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # ZCode 网页访问令牌；留空 = 关闭令牌认证（安全由穿透层负责，见 README「安全」）
+      ZCODE_WEB_TOKEN: ${ZCODE_WEB_TOKEN:-}
+      # Selkies 远程桌面
+      SELKIES_PORT: "7183"
+      SELKIES_IDLE_TIMEOUT: ${SELKIES_IDLE_TIMEOUT:-900}
+      SELKIES_MODE: ${SELKIES_MODE:-websockets}
+      SELKIES_ENABLE_DUAL_MODE: ${SELKIES_ENABLE_DUAL_MODE:-true}
+      SELKIES_ENABLE_HTTPS: ${SELKIES_ENABLE_HTTPS:-false}
+      SELKIES_SESSION: ${SELKIES_SESSION:-openbox}
+      # 可选 Basic Auth（默认关闭）
+      SELKIES_ENABLE_BASIC_AUTH: ${SELKIES_ENABLE_BASIC_AUTH:-false}
+      SELKIES_BASIC_AUTH_USER: ${SELKIES_BASIC_AUTH_USER:-}
+      SELKIES_BASIC_AUTH_PASSWORD: ${SELKIES_BASIC_AUTH_PASSWORD:-}
+      # 可选 TURN（WebRTC 模式公网防火墙掐 UDP 时使用，见 README「WebRTC 与防火墙」）
+      SELKIES_TURN_HOST: ${SELKIES_TURN_HOST:-}
+      SELKIES_TURN_PORT: ${SELKIES_TURN_PORT:-}
+      SELKIES_TURN_USERNAME: ${SELKIES_TURN_USERNAME:-}
+      SELKIES_TURN_PASSWORD: ${SELKIES_TURN_PASSWORD:-}
+      SELKIES_TURN_SHARED_SECRET: ${SELKIES_TURN_SHARED_SECRET:-}
+
+    volumes:
+      - ./workspace:/workspace               # 工作区（含 preview/ 子目录：AI 静态产出）
+      - zcode-data:/root/.zcode              # ZCode 配置 + 插件数据 + MCP 配置（必须持久化）
+      - edge-profile:/data/edge-profile      # Edge 浏览器 Profile
+      - singbox-config:/etc/sing-box         # sing-box 配置（默认空 = 直连）
+      - extra1:/data/extra1                  # 通用预留挂载点
+      - extra2:/data/extra2
+      - extra3:/data/extra3
+
+volumes:
+  zcode-data: {}
+  edge-profile: {}
+  singbox-config: {}
+  extra1: {}
+  extra2: {}
+  extra3: {}

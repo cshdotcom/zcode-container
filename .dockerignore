@@ -1,0 +1,9 @@
+.git
+.github
+.env
+workspace/
+dist-zcode/
+scripts/
+README.md
+docker-compose.yml
+LICENSE

@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "edge": {
+        "type": "http",
+        "url": "http://127.0.0.1:7123/mcp"
+      }
+    }
+  }
+}

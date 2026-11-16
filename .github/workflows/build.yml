@@ -1,0 +1,108 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+              /usr/local/.ghcup /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # CI 一律走默认直连路径（USE_CN_MIRROR=0）；国内加速路径只用于本地构建，见 README
+      - name: Build image (default direct path, load for smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: zcode-container:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (ports / services / desktop / proxy / isolation)
+        run: bash scripts/ci-smoke-test.sh zcode-container:smoke
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            TAGS="latest,${VERSION}"
+          else
+            TAGS="latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      # tag 策略：latest（main）+ 版本号（tag）
+      - name: Push image to GHCR
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -eux
+          for t in $(echo "$TAGS" | tr ',' ' '); do
+            docker tag zcode-container:smoke "${REGISTRY}/${IMAGE_NAME}:${t}"
+            docker push "${REGISTRY}/${IMAGE_NAME}:${t}"
+          done
+          docker images | grep zcode-container || true
+
+      # 除镜像外，同时导出 ZCode 源码构建产物（CLI 发行包）为 Artifact
+      - name: Export ZCode CLI artifacts
+        run: |
+          set -eux
+          docker buildx build \
+            --target zcode-artifacts \
+            --cache-from type=gha \
+            --output type=local,dest=dist-zcode .
+          find dist-zcode -type f -printf '%p  %s bytes\n' | sort
+
+      - name: Upload ZCode CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-cli-dist
+          path: |
+            dist-zcode/releases/*/zcode-*.tar.gz
+            dist-zcode/releases/*/sha256.txt
+            dist-zcode/latest.json
+            dist-zcode/install.sh
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          {
+            echo "## 构建结果"
+            echo ""
+            echo "- 镜像: \`${REGISTRY}/${IMAGE_NAME}:${{ steps.tags.outputs.tags }}\`"
+            echo "- ZCode CLI Artifact: 本页 Artifacts 区域下载（zcode-cli-dist）"
+            echo "- 冒烟测试详情见 Smoke test 步骤日志"
+          } >> "$GITHUB_STEP_SUMMARY"
