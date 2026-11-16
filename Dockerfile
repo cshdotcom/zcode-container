@@ -69,6 +69,17 @@ RUN set -eux; \
     corepack enable; \
     corepack prepare pnpm@10.33.2 --activate; \
     pnpm config set --global store-dir /pnpm/store; \
+    # 先按上游 Dockerfile.desktop-e2e 的方式执行 frozen-lockfile 安装
+    # pnpm hoisted linker 存在间歇性 ERR_PNPM_ENOENT rename 竞态(pnpm/pnpm#12880 上游已知问题)，
+    # 失败时清理 node_modules 后重试
+    attempt=1; \
+    until pnpm install --frozen-lockfile; do \
+        attempt=$((attempt+1)); \
+        if [ "$attempt" -gt 3 ]; then echo "pnpm install 重试 3 次仍失败" >&2; exit 1; fi; \
+        echo "WARN: pnpm install 第 $((attempt-1)) 次失败(已知 pnpm#12880 间歇竞态), 清理 node_modules 后重试"; \
+        rm -rf node_modules; \
+    done; \
+    # 官方初始化入口(此时依赖已就绪, 其内部 install 走增量路径) \
     pnpm bootstrap; \
     pnpm build:zcode --base-url "${ZCODE_DIST_BASE_URL}"; \
     # 校验产物齐全（上游 build-zcode.mjs 自身的断言之外再加一道）
