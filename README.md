@@ -8,7 +8,7 @@
 
 | 组件 | 上游 | 接入方式 |
 | --- | --- | --- |
-| ZCode | https://github.com/zai-org/ZCode | `git clone`（固定 tag `v3.18.2`）→ Node.js 24.14.0 + pnpm 10.33.2（与上游 `mise.toml`/`Dockerfile.desktop-e2e` 一致）→ `pnpm bootstrap` → `pnpm build:zcode`，解包运行 `zcode --web` |
+| ZCode | https://github.com/zai-org/ZCode | `git clone`（固定 tag `v3.18.2`）→ Node.js 24.14.0 + pnpm 10.33.2（与上游 `mise.toml`/`Dockerfile.desktop-e2e` 一致）→ `pnpm install`（上游 e2e 容器同款 frozen-lockfile）→ `pnpm bootstrap` → `pnpm build:sea:prepare`（上游脚本报错信息指定的 SEA 前置）→ `pnpm build:zcode`，解包运行 `zcode --web` |
 | Selkies | https://github.com/selkies-project/selkies | 官方 `.deb`（`2.2.1`，sha256 校验），`selkies session` 接入，参数与官方 coder 插件一致 |
 | edge-mcp | https://github.com/hualang-C/edge-mcp | 源码固定 commit + `npm install`，HTTP 模式常驻 `:7123` |
 | sing-box | https://github.com/SagerNet/sing-box | 官方二进制 `1.14.4`（sha256 校验）→ `/usr/local/bin/sing-box`，默认不启动 |

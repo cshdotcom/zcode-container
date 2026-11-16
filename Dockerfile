@@ -81,6 +81,9 @@ RUN set -eux; \
     done; \
     # 官方初始化入口(此时依赖已就绪, 其内部 install 走增量路径) \
     pnpm bootstrap; \
+    # 官方 SEA 前置脚本：补齐 build:zcode 打包(stageTuiRuntime)所需的 @zcode/shared dist
+    # （上游脚本报错信息本身指定的前置步骤）
+    pnpm build:sea:prepare; \
     pnpm build:zcode --base-url "${ZCODE_DIST_BASE_URL}"; \
     # 校验产物齐全（上游 build-zcode.mjs 自身的断言之外再加一道）
     ls dist/zcode/releases/*/zcode-*.tar.gz; \
