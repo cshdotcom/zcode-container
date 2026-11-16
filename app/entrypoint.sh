@@ -88,6 +88,22 @@ term() {
 }
 trap term TERM INT
 
+# ---------------- ZCode 无头服务端凭据密钥 ----------------
+# 上游 systemCredentialCipher 要求：Secret Service / ZCODE_CREDENTIAL_SECRET /
+# ZCODE_CREDENTIAL_SECRET_FILE（0600、32–4096 字节）三选一，且不得并用。
+# 无 Secret Service 的容器内采用默认文件位置 /root/.zcode/v2/credential-secret，
+# 首次启动生成，持久化于 /root/.zcode 卷（加密数据依赖原密钥，重启不丢）。
+if [ -z "${ZCODE_CREDENTIAL_SECRET:-}" ] && [ -z "${ZCODE_CREDENTIAL_SECRET_FILE:-}" ]; then
+    ZCODE_SECRET_FILE=/root/.zcode/v2/credential-secret
+    mkdir -p /root/.zcode/v2
+    if [ ! -f "$ZCODE_SECRET_FILE" ]; then
+        ( umask 077; head -c 48 /dev/urandom | base64 -w0 >"$ZCODE_SECRET_FILE" )
+        chmod 0600 "$ZCODE_SECRET_FILE"
+        log "已生成 ZCode 凭据密钥：$ZCODE_SECRET_FILE（0600，持久卷内）"
+    fi
+    export ZCODE_CREDENTIAL_SECRET_FILE="$ZCODE_SECRET_FILE"
+fi
+
 # ---------------- 启动 ----------------
 
 log "启动常驻服务：Xvfb:99 / Edge(headless,CDP:9222) / edge-mcp(:7123) / ZCode web(:3030)"

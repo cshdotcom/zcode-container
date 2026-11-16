@@ -81,7 +81,7 @@ docker exec -it zcode-container desktop-off    # 停止并释放
 | 路径 | 用途 |
 | --- | --- |
 | `/workspace/` | 工作区（含 `preview/` 子目录：AI 静态产出） |
-| `/root/.zcode/` | ZCode 配置 + 插件数据 + MCP 配置（`cli/config.json`，**必须持久化，重启不丢**） |
+| `/root/.zcode/` | ZCode 配置 + 插件数据 + MCP 配置（`cli/config.json`，**必须持久化，重启不丢**）；含 `v2/credential-secret`（ZCode 无头服务端的凭据加密密钥，容器首次启动自动生成 0600 随机密钥，**随卷持久化，删除该卷将导致已保存凭据无法解密**） |
 | `/data/edge-profile/` | Edge 浏览器 Profile（用户数据目录） |
 | `/etc/sing-box/` | sing-box 代理配置（**用户自备，默认空 = 直连**） |
 | `/data/extra1` ~ `/data/extra3` | 通用预留挂载点：想持久化任何自定义路径就挂这里，容器不限制 |
