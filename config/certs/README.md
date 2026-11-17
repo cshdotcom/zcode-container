@@ -1,6 +1,6 @@
-# 内网 HTTPS 自签证书（不入库）
+# 内网 HTTPS 桌面自签证书（nginx :443 用，不入库）
 
-仓库不含私钥。在本目录自行生成：
+仓库不含私钥。在本目录自行生成（不生成则 nginx 容器无法启动）：
 
 ```bash
 openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \

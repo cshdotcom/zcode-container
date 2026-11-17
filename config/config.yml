@@ -2,7 +2,7 @@
 tunnel: REPLACE_WITH_YOUR_TUNNEL_ID
 credentials-file: /etc/cloudflared/credentials/tunnel-credentials.json
 originRequest:
-  noTLSVerify: true
+  # 全部源均为明文 http（桌面经网关 nginx :83），不依赖 noTLSVerify，零 502 风险
   connectTimeout: 10s
 
 ingress:
@@ -11,9 +11,9 @@ ingress:
   - hostname: zcode.example-b.com
     service: http://zcode:3030
   - hostname: desktop.example-a.com
-    service: https://zcode:7183
+    service: http://preview:83
   - hostname: desktop.example-b.com
-    service: https://zcode:7183
+    service: http://preview:83
   - hostname: preview.example-a.com
     service: http://preview:81
   - hostname: preview.example-b.com

@@ -2,7 +2,9 @@
 # 公网：全部流量经 cloudflared 出站隧道（公网 IP 零端口）
 # 内网/VPN：高位端口直连（避开常用端口；可绑定 VPN 网卡 IP，公网网卡仍零端口）
 # 预览位：动态优先、静态兜底（AI 起了 dev server 即转发，没起回落静态目录）
-# 桌面：Selkies 原生 HTTPS（SELKIES_ENABLE_HTTPS，单监听器）——外网 CF 边缘 TLS，内网 https://IP:47183 自签证书；桌面路径不经 nginx
+# 桌面：Selkies 本体保持纯 HTTP(7183)，TLS 统一由网关 nginx 终止——
+#         隧道源 http://preview:83（明文，绝不 502），内网 HTTPS = 宿主 47184 -> nginx :443（自签证书），
+#         CF 真实客户端 IP 经 CF-Connecting-IP 在 nginx 还原
 name: zcode-tunnel
 
 services:
@@ -15,9 +17,10 @@ services:
     shm_size: "2gb"
     networks: [znet]
     # ---- 内网/VPN 直连端口（全部高位端口；EXT_BIND_ADDR 可绑定 VPN 网卡 IP）----
+    # 桌面加密入口（47184）在下方 preview 网关服务上，不在 zcode 本体
     ports:
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_ZCODE_PORT:-43030}:3030"
-      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SELKIES_PORT:-47183}:7183"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SELKIES_PORT:-47183}:7183"   # 桌面明文直连（安全上下文需求走 47184）
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV_PORT:-40808}:8080"
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SPARE_PORT:-40809}:8090"
     environment:
@@ -28,10 +31,9 @@ services:
       SELKIES_IDLE_TIMEOUT: ${SELKIES_IDLE_TIMEOUT:-900}
       SELKIES_MODE: ${SELKIES_MODE:-websockets}
       SELKIES_ENABLE_DUAL_MODE: "true"
-      SELKIES_ENABLE_HTTPS: "true"
-      # 原生 TLS：证书挂载到 /certs（Selkies 官方变量，cert_reload_interval 默认 30s 自动重载）
-      SELKIES_HTTPS_CERT: /certs/desktop-lan.crt
-      SELKIES_HTTPS_KEY: /certs/desktop-lan.key
+      # 桌面保持 HTTP：TLS 由网关 nginx 终止（若设 true 会把 7183 整个切成 TLS 监听，
+      # 内网明文入口与隧道明文源都会失效，勿改）
+      SELKIES_ENABLE_HTTPS: "false"
       SELKIES_SESSION: ${SELKIES_SESSION:-openbox}
       SELKIES_ENABLE_BASIC_AUTH: "true"
       SELKIES_BASIC_AUTH_USER: ${DESKTOP_AUTH_USER:?请在 .env 中设置}
@@ -50,12 +52,6 @@ services:
       - ${ZCODE_BASE_DIR:-/srv/zcode}/data/extra1:/data/extra1
       - ${ZCODE_BASE_DIR:-/srv/zcode}/data/extra2:/data/extra2
       - ${ZCODE_BASE_DIR:-/srv/zcode}/data/extra3:/data/extra3
-      # Selkies 原生 TLS 证书（替换后 30s 内自动重载）
-      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/certs:/certs:ro
-      # 脚本补丁（镜像 v1.0.0 不重建：https 模式健康检查/状态探测 + 提示文案）
-      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/app-patch/desktop-on.sh:/usr/local/bin/desktop-on.sh:ro
-      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/app-patch/desktop-status.sh:/usr/local/bin/desktop-status.sh:ro
-      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/app-patch/healthcheck.sh:/usr/local/bin/healthcheck.sh:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 30s
@@ -63,7 +59,7 @@ services:
       retries: 3
       start_period: 120s
 
-  # ---------- 网关 nginx：静态预览 + 动态回退预览（桌面不经 nginx：Selkies 原生 TLS） ----------
+  # ---------- 网关 nginx：静态/动态预览 + 桌面双路径（隧道 :83 / 内网 HTTPS :443） ----------
   preview:
     image: nginx:alpine
     # 国内服务器可用加速源：
@@ -71,19 +67,25 @@ services:
     container_name: zcode-preview
     restart: unless-stopped
     networks: [znet]
-    # 40881 -> 80  纯静态预览（preview.*）
+    # 40881 -> 80  纯静态预览（preview.*，default_server 兼内网直连兜底）
     # 40882 -> 81  动态优先(zcode:8080) + 静态兜底（preview.*）
     # 40883 -> 82  动态优先(zcode:8090) + 静态兜底（preview2.*）
+    # 47184 -> 47184/ssl 内网 HTTPS 桌面（nginx :443 自签 TLS -> zcode:7183）
+    # :83 不映射宿主机——仅供 cloudflared 隧道容器访问（明文 http 源，绝不 502）
     ports:
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_STATPREV_PORT:-40881}:80"
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV1_PORT:-40882}:81"
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV2_PORT:-40883}:82"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DESKTOP_HTTPS_PORT:-47184}:443"
     volumes:
       - ${ZCODE_BASE_DIR:-/srv/zcode}/workspace/preview:/usr/share/nginx/html/preview:ro
       - ${ZCODE_BASE_DIR:-/srv/zcode}/workspace/preview2:/usr/share/nginx/html/preview2:ro
       - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-preview-static.conf:/etc/nginx/conf.d/preview-static.conf:ro
       - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-preview-dyn.conf:/etc/nginx/conf.d/preview-dyn.conf:ro
       - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-preview2-dyn.conf:/etc/nginx/conf.d/preview2-dyn.conf:ro
+      # 桌面网关：:83 隧道路径（CF 真实 IP 还原） + :443 内网 HTTPS（自签证书）
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-desktop.conf:/etc/nginx/conf.d/desktop.conf:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/certs:/etc/nginx/certs:ro
     depends_on:
       zcode:
         condition: service_healthy

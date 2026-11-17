@@ -1,145 +1,42 @@
-# ZCode Cloudflare Tunnel + 内网双通道 —— 无敏感信息部署示例
+# ZCode Cloudflare Tunnel + 内网双通道 部署示例（占位版）
 
-这是 [zcode-container](https://github.com/cshdotcom/zcode-container) 的**零私密数据**部署示例分支（`deploy-example`）：
-不含任何隧道凭据、私钥、真实 token / 密码。按下面步骤替换占位符即可部署你自己的实例。
+> 本分支是**脱敏后的部署示例**：域名 / 路径 / 凭据全部为占位符，对照改成自己的值即可。
+> 容器镜像与完整说明见 main 分支 README 与 GHCR 镜像 `ghcr.io/cshdotcom/zcode-container`。
 
-## 架构
+## 接线总览（8 条路由，双域名同理）
 
-```
-                     ┌── Cloudflare Tunnel（公网唯一入口，源 IP 零端口）
-公网用户 ──────────→  │   zcode.* / desktop.* / preview.* / preview2.*（8 条 proxied DNS）
-                     │
-                     ├── zcode 容器（3030 网页端 / 7183 桌面·Selkies 原生 HTTPS / 8080+8090 AI 动态服务）
-                     │
-                     ├── nginx 网关（80 静态预览 / 81,82 动态优先+静态兜底 —— 只管预览，桌面不经它）
-                     │
-内网/VPN 用户 ─────→  └── 高位端口直连：43030 / 47183 / 40881-40883 / 40808-40809
-```
+| 公网域名 | 隧道源 | 说明 |
+|---|---|---|
+| `zcode.example-a.com` | `http://zcode:3030` | ZCode 网页端（URL token） |
+| `desktop.example-a.com` | `http://preview:83` | Selkies 桌面（经 nginx 网关，CF 真实 IP 还原） |
+| `preview.example-a.com` | `http://preview:81` | 动态优先 :8080 + 静态兑底 |
+| `preview2.example-a.com` | `http://preview:82` | 动态优先 :8090 + 静态兑底 |
 
-**预览位逻辑（动态优先、静态兜底）**：AI 在容器内起了 dev server（8080/8090）→ nginx 自动转发；
-没起（502）→ 自动回落 `workspace/preview/`（或 `preview2/`）静态目录。同一入口两用。
+桌面三入口（同一会话）：desktop 域名（CF 边缘 TLS）/ 内网 `http://IP:47183`（明文）/ 内网 `https://IP:47184`（nginx 自签 TLS，安全上下文）。**Selkies 本体恒为 HTTP(:7183)，TLS 全部由网关 nginx 终止**——隧道源保持明文 http，绝不 502。
 
-**桌面：Selkies 原生 HTTPS，全程不经 nginx**——公网 `https://desktop.<域名>`（Cloudflare 边缘 TLS；
-cloudflared 直连 `https://zcode:7183` 自签源站，依赖 `originRequest.noTLSVerify: true`）；
-内网/VPN 直连 `https://<IP>:47183`（Selkies 原生 TLS，自签证书）。
+## 三步初始化
 
-> 为什么没有"HTTP+HTTPS 双端口并存"：Selkies 2.x 是**单监听器**，`--enable-https` 把整个端口切为 TLS
-> （官方 settings：`enable_https` = "Enable or disable HTTPS for the web application"；源码 `_build_sites`
-> 对同一 port 要么全挂 ssl_context 要么全不挂）。`--enable-dual-mode` 与此无关——它是**页面里切
-> WebSocket/WebRTC 传输**的开关（v2.2.1 默认已 true）。证书走官方变量 `SELKIES_HTTPS_CERT/KEY`，
-> `cert_reload_interval` 默认 30 秒热重载。镜像 v1.0.0 的 desktop-on/healthcheck 健康探测是 http，
-> 本分支 `config/app-patch/*.sh` 三个脚本 bind-mount 覆盖为 https 版（**免重建镜像**）。
->
-> 宿主机禁止 443：所有对外端口一律高位非 443；容器内 AI 自起的临时服务一律明文 HTTP 高位端口。
+1. **建隧道与域名**：Cloudflare Zero Trust 建隧道（TunnelID / TunnelSecret / AccountTag 填入 `config/tunnel-credentials.json` 占位符）；DNS 加 4×2 条 proxied CNAME 指向 `<TunnelID>.cfargotunnel.com`；把 `config/config.yml` 与 `config/nginx-*.conf` 里的 `example-a.com` / `example-b.com` 换成你的域名
+2. **生成自签证书**（内网 https://IP:47184 用）：见 `config/certs/README.md`——不生成则 nginx 容器起不来
+3. **填 .env 并启动**：`cp .env.example .env`，替换 REPLACE_WITH_* 凭据；`docker compose up -d`；健康检查通过后把 `ZCODE-AI-PROMPT.md` 贴进 ZCode 个性化提示词
 
-**WebRTC / UDP**：默认传输 WebSockets（HTTP/WS），CF 隧道完美支持，不需要 UDP。WebRTC 媒体走 UDP，
-Cloudflare 公网隧道不支持 UDP（Spectrum 为企业版）；内网直连也需开 UDP 端口映射（本方案刻意不开）。
-确需低延迟 WebRTC 时配 TURN（`SELKIES_TURN_*` 或 Cloudflare TURN：`SELKIES_CLOUDFLARE_TURN_TOKEN_ID`
-+ `SELKIES_CLOUDFLARE_TURN_API_TOKEN`，TURN over TCP 443 出站，不受宿主入站 443 禁令影响）。
-
-## 数据全部落在宿主机 ZCODE_BASE_DIR（默认 /srv/zcode，可改）
-
-```
-$ZCODE_BASE_DIR/
-├── docker-compose.yml + .env   # 部署文件（本分支内容放这里）
-├── workspace/preview/ preview2/   # 容器 /workspace（AI 静态产出发布目录）
-├── data/zcode/ edge-profile/ singbox/ extra1..3/   # 全部持久化状态（bind mount）
-└── config/                    # 隧道凭据 / nginx / 证书 / 镜像脚本补丁
-```
-
-## 三步初始化（把占位符换成你自己的值）
-
-### 第 1 步：Cloudflare 侧（API 一把梭）
-
-```bash
-EMAIL="你的CF账号邮箱"
-KEY="你的Global API Key"          # dash.cloudflare.com -> My Profile -> API Tokens -> Global API Key
-ZONE_NAME="你的域名.com"
-
-# 取 zone id / account id
-ZONE_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
-  -H "X-Auth-Email: $EMAIL" -H "X-Auth-Key: $KEY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["result"][0]["id"])')
-ACCT_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones/$ZONE_ID" \
-  -H "X-Auth-Email: $EMAIL" -H "X-Auth-Key: $KEY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["result"]["account"]["id"])')
-
-# 建隧道（本地管理模式）+ 随机 secret
-SECRET=$(openssl rand -base64 32)
-TUNNEL_ID=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCT_ID/cfd_tunnel" \
-  -H "X-Auth-Email: $EMAIL" -H "X-Auth-Key: $KEY" -H "Content-Type: application/json" \
-  -d "{\"name\":\"zcode-container\",\"tunnel_secret\":\"$SECRET\",\"config_src\":\"local\"}" \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["result"]["id"])')
-
-# 配 8 条 DNS（proxied CNAME -> <tunnel_id>.cfargovm.net）
-for H in zcode desktop preview preview2; do
-  curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-  -H "X-Auth-Email: $EMAIL" -H "X-Auth-Key: $KEY" -H "Content-Type: application/json" \
-  -d "{\"type\":\"CNAME\",\"name\":\"$H.$ZONE_NAME\",\"content\":\"$TUNNEL_ID.cfargovm.net\",\"proxied\":true}"
-done
-```
-
-### 第 2 步：替换占位符
-
-```bash
-git clone -b deploy-example https://github.com/cshdotcom/zcode-container.git $ZCODE_BASE_DIR
-cd $ZCODE_BASE_DIR
-
-# 1) tunnel-credentials.json：填入上面的 ACCOUNT / TUNNEL_ID / SECRET
-# 2) config/config.yml：tunnel: 行的 ID、8 个 hostname（示例为 example-a.com / example-b.com）换成你的域名
-# 3) .env：凭据换随机值
-ZCODE_WEB_TOKEN=$(openssl rand -hex 10)
-DESKTOP_AUTH_USER=任意用户名
-DESKTOP_AUTH_PASSWORD=$(openssl rand -hex 10)
-
-# 4) 自签桌面 TLS 证书（Selkies 原生 HTTPS 用，替换后 30 秒热重载；见 config/certs/README.md）
-bash config/certs/README.md 里的一行 openssl 命令（按你的域名改 SAN）
-```
-
-### 第 3 步：起
-
-```bash
-cp .env.example .env      # 先把上面替换好的值放进 .env
-docker compose up -d
-docker compose logs -f cloudflared   # 出现 4x Registered tunnel connection 即通
-```
-
-收尾：把 `ZCODE-AI-PROMPT.md` 整段贴进 ZCode 网页端的个性化提示词（系统提示词），
-容器内 AI 即按本分支的端口约定工作。
-
-## 内网/VPN 直连端口（全部高位，避开常用端口号；宿主机禁止 443）
+## 内网/VPN 直连端口（全部高位，宿主不开 443）
 
 | 宿主端口 | 容器内 | 用途 |
 |---|---|---|
-| 43030 | 3030 | ZCode 网页端（`http://IP:43030/?token=...`） |
-| 47183 | 7183 | 远程桌面 **HTTPS**（Selkies 原生 TLS，自签证书 = desktop 域名） |
-| 40881 | 80 | 纯静态预览 |
-| 40882 | 81 | 动态优先(8080)+静态兜底 = preview 域名 |
-| 40883 | 82 | 动态优先(8090)+静态兜底 = preview2 域名 |
-| 40808 | 8080 | AI 动态服务 1 直连 |
-| 40809 | 8090 | AI 动态服务 2 直连 |
+| 43030 | 3030 | ZCode 网页端 |
+| 47183 | 7183 | 桌面 HTTP 明文（直连 Selkies） |
+| 47184 | 443 | 桌面 HTTPS（nginx 自签 TLS -> zcode:7183） |
+| 40881 / 40882 / 40883 | 80 / 81 / 82 | 纯静态 / 动态优先1 / 动态优先2 预览 |
+| 40808 / 40809 | 8080 / 8090 | AI 动态服务直连（不经 nginx） |
 
-`.env` 的 `EXT_BIND_ADDR` 填 VPN 网卡 IP（如 Tailscale 100.x.x.x）→ 端口仅 VPN 内可达，公网网卡零端口。
+`EXT_BIND_ADDR` 可绑定 VPN 网卡 IP（公网网卡零端口）；数据根目录 `ZCODE_BASE_DIR` 默认 `/srv/zcode`。
 
-日常操作（注意命令带 `.sh` 后缀）：
+## 日常操作
 
 ```bash
-docker exec -it zcode-container desktop-on.sh       # 开桌面（47183 与 desktop.* 双通道同一会话）
+docker compose ps && docker compose logs -f cloudflared
+docker exec -it zcode-container desktop-on.sh   # 开桌面（三入口同会话）
 docker exec -it zcode-container desktop-status.sh
 docker exec -it zcode-container desktop-off.sh
 ```
-
-## AI 在容器内的使用约定
-
-- 静态预览：产物写 `/workspace/preview/`（宿主机 `$ZCODE_BASE_DIR/workspace/preview/`，→ preview 域名 / 40882 兜底）
-- 动态预览：起 dev server 监听 `0.0.0.0:8080`（→ preview 域名 / 40882 / 40808）或 `:8090`（→ preview2 域名 / 40883 / 40809）；停止即回落静态目录
-- AI 的临时服务一律明文 HTTP 高位端口，不绑 443、不自配 TLS
-
-## 安全边界
-
-1. Cloudflare 边缘 proxied（隐藏源 IP，TLS 边缘终结）
-2. ZCode URL token + 桌面 Basic Auth（公网/内网均生效）
-3. 公网网卡可零端口；内网仅高位非常用端口
-
-## 主仓库
-
-镜像、构建、冒烟测试见 [main 分支 README](https://github.com/cshdotcom/zcode-container/blob/main/README.md)。
-镜像：`docker pull ghcr.io/cshdotcom/zcode-container:1.0.0`（国内加速：华为 SWR 源，见主 README）。
