@@ -22,6 +22,16 @@
 **桌面三入口**：公网 `https://desktop.<域名>`（Cloudflare TLS）；内网 `http://<IP>:47183`；
 内网 HTTPS `https://<IP>:47184`（自签证书）。
 
+## 数据全部落在宿主机 ZCODE_BASE_DIR（默认 /srv/zcode，可改）
+
+```
+$ZCODE_BASE_DIR/
+├── docker-compose.yml + .env   # 部署文件（本分支内容放这里）
+├── workspace/preview/ preview2/   # 容器 /workspace（AI 静态产出发布目录）
+├── data/zcode/ edge-profile/ singbox/ extra1..3/   # 全部持久化状态（bind mount）
+└── config/                    # 隧道凭据 / nginx / 证书
+```
+
 ## 三步初始化（把占位符换成你自己的值）
 
 ### 第 1 步：Cloudflare 侧（API 一把梭）
@@ -56,7 +66,8 @@ done
 
 ```bash
 git clone -b deploy-example https://github.com/cshdotcom/zcode-container.git zcode-tunnel-kit
-cd zcode-tunnel-kit
+git clone -b deploy-example https://github.com/cshdotcom/zcode-container.git $ZCODE_BASE_DIR
+cd $ZCODE_BASE_DIR
 
 # 1) tunnel-credentials.json：填入上面的 ACCOUNT / TUNNEL_ID / SECRET
 # 2) config/config.yml：tunnel: 行的 ID、8 个 hostname 换成你的域名
@@ -94,8 +105,8 @@ docker compose logs -f cloudflared   # 出现 4x Registered tunnel connection �
 
 ## AI 在容器内的使用约定
 
-- 静态预览：产物写 `/workspace/preview/`（→ preview 域名 / 40882 兜底）
-- 动态预览：起 dev server 监听 `0.0.0.0:8080`（→ preview 域名 / 40882 / 40808）或 `:8090`（→ preview2 域名 / 40883 / 40809）
+- 静态预览：产物写 `/workspace/preview/`（宿主机 `$ZCODE_BASE_DIR/workspace/preview/`，→ preview 域名 / 40882 兜底）
+- 动态预览：起 dev server 监听 `0.0.0.0:8080`（→ preview 域名 / 40882 / 40808）或 `:8090`（→ preview2 域名 / 40883 / 40809）；停止即回落静态目录
 
 ## 安全边界
 

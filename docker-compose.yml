@@ -39,13 +39,14 @@ services:
       SELKIES_TURN_PASSWORD: ${SELKIES_TURN_PASSWORD:-}
       SELKIES_TURN_SHARED_SECRET: ${SELKIES_TURN_SHARED_SECRET:-}
     volumes:
-      - ./workspace:/workspace
-      - zcode-data:/root/.zcode
-      - edge-profile:/data/edge-profile
-      - singbox-config:/etc/sing-box
-      - extra1:/data/extra1
-      - extra2:/data/extra2
-      - extra3:/data/extra3
+      # ---- 全部持久化数据统一落在宿主机 ${ZCODE_BASE_DIR:-/srv/zcode} ----
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/workspace:/workspace
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/data/zcode:/root/.zcode
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/data/edge-profile:/data/edge-profile
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/data/singbox:/etc/sing-box
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/data/extra1:/data/extra1
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/data/extra2:/data/extra2
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/data/extra3:/data/extra3
     healthcheck:
       test: ["CMD", "healthcheck"]
       interval: 30s
@@ -71,13 +72,13 @@ services:
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV2_PORT:-40883}:82"
       - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DESKTOP_HTTPS_PORT:-47184}:47184"
     volumes:
-      - ./workspace/preview:/usr/share/nginx/html/preview:ro
-      - ./workspace/preview2:/usr/share/nginx/html/preview2:ro
-      - ./config/nginx-preview-static.conf:/etc/nginx/conf.d/preview-static.conf:ro
-      - ./config/nginx-preview-dyn.conf:/etc/nginx/conf.d/preview-dyn.conf:ro
-      - ./config/nginx-preview2-dyn.conf:/etc/nginx/conf.d/preview2-dyn.conf:ro
-      - ./config/nginx-desktop-https.conf:/etc/nginx/conf.d/desktop-https.conf:ro
-      - ./config/certs:/etc/nginx/certs:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/workspace/preview:/usr/share/nginx/html/preview:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/workspace/preview2:/usr/share/nginx/html/preview2:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-preview-static.conf:/etc/nginx/conf.d/preview-static.conf:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-preview-dyn.conf:/etc/nginx/conf.d/preview-dyn.conf:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-preview2-dyn.conf:/etc/nginx/conf.d/preview2-dyn.conf:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/nginx-desktop-https.conf:/etc/nginx/conf.d/desktop-https.conf:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/certs:/etc/nginx/certs:ro
     depends_on:
       zcode:
         condition: service_healthy
@@ -92,8 +93,8 @@ services:
     networks: [znet]
     command: tunnel --no-autoupdate --config /etc/cloudflared/config/config.yml run
     volumes:
-      - ./config/tunnel-credentials.json:/etc/cloudflared/credentials/tunnel-credentials.json:ro
-      - ./config/config.yml:/etc/cloudflared/config/config.yml:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/tunnel-credentials.json:/etc/cloudflared/credentials/tunnel-credentials.json:ro
+      - ${ZCODE_BASE_DIR:-/srv/zcode}/config/config.yml:/etc/cloudflared/config/config.yml:ro
     depends_on:
       zcode:
         condition: service_healthy
@@ -104,10 +105,4 @@ networks:
   znet:
     driver: bridge
 
-volumes:
-  zcode-data: {}
-  edge-profile: {}
-  singbox-config: {}
-  extra1: {}
-  extra2: {}
-  extra3: {}
+# 无命名卷：全部数据经 bind mount 落在 ${ZCODE_BASE_DIR:-/srv/zcode}（workspace/ + data/ + config/）

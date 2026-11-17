@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>预览占位 - preview</title>
+<head><meta charset="utf-8"><title>preview 预览站点已就绪</title>
 <style>body{font-family:system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh;background:#0f172a;color:#e2e8f0}
-div{text-align:center} h1{font-size:1.4rem} p{color:#94a3b8} code{background:#1e293b;padding:2px 8px;border-radius:6px}</style></head>
+div{text-align:center;max-width:720px;padding:0 24px} h1{font-size:1.4rem} p{color:#94a3b8;line-height:1.7} code{background:#1e293b;padding:2px 8px;border-radius:6px;font-size:.95em}</style></head>
 <body><div><h1>preview 预览站点已就绪</h1>
-<p>AI 在容器内将静态产出写到 <code>/workspace/preview/</code> 即在此发布。</p></div></body></html>
+<p>静态产出发布位置（二选一，同一入口）：<br>
+· AI 在容器内写入 <code>/workspace/preview/</code>（宿主机 <code>/srv/zcode/workspace/preview/</code>）即在此发布；<br>
+· AI 在容器内起 dev server 监听 <code>0.0.0.0:8080</code> 时，本站自动转发该动态服务（服务停止自动回落本静态目录）。</p></div></body></html>
