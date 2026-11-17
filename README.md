@@ -96,26 +96,25 @@ compose 中已声明以上卷；`docker run` 用户请按 `docker-compose.yml` �
 
 - CI 跑**默认直连路径**（`USE_CN_MIRROR=0`，境外网络本来就直连）；国内加速路径不进 CI，只在本文「构建加速开关」章节说明本地用法。
 - 构建成功后推送 GHCR：`ghcr.io/cshdotcom/zcode-container`，tag 策略为 `latest`（main）+ 版本号（tag）。
-- 除镜像外，workflow 同时构建并上传 **ZCode 源码构建产物**（CLI 发行包 `zcode-<version>.tar.gz`、`sha256.txt`、`latest.json`、`install.sh`）为 Artifact，不拉镜像也能直接取用。
+- 除镜像外，workflow 同时构建并上传 **ZCode 源码构建产物**（CLI 发行包 `zcode-<version>.tar.gz`、`sha256.txt`、`latest.json`、`install.sh`）为 Artifact；v1.0.0 起这套文件也同步挂到了对应 Release 附件（免登录直链），不拉镜像也能直接取用。
 - 任一步骤失败 workflow 显式变红（冒烟测试失败则不推送镜像）。
 
-手动从 GHCR 拉取镜像：
+手动从 GHCR 拉取镜像（包已设为 public，无需 `docker login`，匿名直接拉）：
 
 ```bash
-# 公共镜像直接拉取
 docker pull ghcr.io/cshdotcom/zcode-container:latest
 docker pull ghcr.io/cshdotcom/zcode-container:1.0.0
-
-# 若包为私有（首次推送默认可能为私有），先登录：
-echo <你的GitHub PAT> | docker login ghcr.io -u <你的用户名> --password-stdin
-docker pull ghcr.io/cshdotcom/zcode-container:latest
 ```
 
-CLI 发行包（Artifact）用法：
+CLI 发行包用法（**Release v1.0.0 附件已公开，免登录直链下载**）：
 
 ```bash
-# 从 Actions 页面下载 zcode-cli-dist 后：
-tar -xzf zcode-<version>.tar.gz
+# 方式一：一条命令安装（自动读 latest.json + sha256 校验）
+curl -fsSL -o install.sh https://github.com/cshdotcom/zcode-container/releases/download/v1.0.0/install.sh
+ZCODE_DIST_BASE_URL=https://github.com/cshdotcom/zcode-container/releases/download/v1.0.0/ sh install.sh
+
+# 方式二：手动下载解压
+tar -xzf zcode-3.18.2.tar.gz
 node zcode/bin/zcode.mjs --web --workspace "$PWD" --port 3030 --no-open
 ```
 
