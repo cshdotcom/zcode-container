@@ -11,9 +11,9 @@ ingress:
   - hostname: zcode.example-b.com
     service: http://zcode:3030
   - hostname: desktop.example-a.com
-    service: http://zcode:7183
+    service: https://zcode:7183
   - hostname: desktop.example-b.com
-    service: http://zcode:7183
+    service: https://zcode:7183
   - hostname: preview.example-a.com
     service: http://preview:81
   - hostname: preview.example-b.com
