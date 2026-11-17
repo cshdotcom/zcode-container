@@ -1,0 +1,113 @@
+# ZCode 自托管 AI 工作容器 —— Cloudflare Tunnel + 内网双通道部署
+# 公网：全部流量经 cloudflared 出站隧道（公网 IP 零端口）
+# 内网/VPN：高位端口直连（避开常用端口；可绑定 VPN 网卡 IP，公网网卡仍零端口）
+# 预览位：动态优先、静态兜底（AI 起了 dev server 即转发，没起回落静态目录）
+# 桌面：HTTP 7183 走隧道外网；内网另有 HTTPS :47184（自签证书，nginx 终结）
+name: zcode-tunnel
+
+services:
+  zcode:
+    image: ghcr.io/cshdotcom/zcode-container:1.0.0
+    # 国内加速（与 GHCR 内容一致，sha256 已核对）：
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/cshdotcom/zcode-container:1.0.0
+    container_name: zcode-container
+    restart: unless-stopped
+    shm_size: "2gb"
+    networks: [znet]
+    # ---- 内网/VPN 直连端口（全部高位端口；EXT_BIND_ADDR 可绑定 VPN 网卡 IP）----
+    ports:
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_ZCODE_PORT:-43030}:3030"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SELKIES_PORT:-47183}:7183"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV_PORT:-40808}:8080"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_SPARE_PORT:-40809}:8090"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      ZCODE_WEB_TOKEN: ${ZCODE_WEB_TOKEN:?请在 .env 中设置}
+      SELKIES_PORT: "7183"
+      SELKIES_PUBLIC: "true"
+      SELKIES_IDLE_TIMEOUT: ${SELKIES_IDLE_TIMEOUT:-900}
+      SELKIES_MODE: ${SELKIES_MODE:-websockets}
+      SELKIES_ENABLE_DUAL_MODE: "true"
+      SELKIES_ENABLE_HTTPS: "false"
+      SELKIES_SESSION: ${SELKIES_SESSION:-openbox}
+      SELKIES_ENABLE_BASIC_AUTH: "true"
+      SELKIES_BASIC_AUTH_USER: ${DESKTOP_AUTH_USER:?请在 .env 中设置}
+      SELKIES_BASIC_AUTH_PASSWORD: ${DESKTOP_AUTH_PASSWORD:?请在 .env 中设置}
+      SELKIES_TURN_HOST: ${SELKIES_TURN_HOST:-}
+      SELKIES_TURN_PORT: ${SELKIES_TURN_PORT:-}
+      SELKIES_TURN_USERNAME: ${SELKIES_TURN_USERNAME:-}
+      SELKIES_TURN_PASSWORD: ${SELKIES_TURN_PASSWORD:-}
+      SELKIES_TURN_SHARED_SECRET: ${SELKIES_TURN_SHARED_SECRET:-}
+    volumes:
+      - ./workspace:/workspace
+      - zcode-data:/root/.zcode
+      - edge-profile:/data/edge-profile
+      - singbox-config:/etc/sing-box
+      - extra1:/data/extra1
+      - extra2:/data/extra2
+      - extra3:/data/extra3
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ---------- 网关 nginx：静态预览 + 动态回退预览 + 内网桌面 HTTPS ----------
+  preview:
+    image: nginx:alpine
+    # 国内服务器可用加速源：
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nginx:alpine
+    container_name: zcode-preview
+    restart: unless-stopped
+    networks: [znet]
+    # 40881 -> 80  纯静态预览（preview.*）
+    # 40882 -> 81  动态优先(zcode:8080) + 静态兜底（preview.*）
+    # 40883 -> 82  动态优先(zcode:8090) + 静态兜底（preview2.*）
+    # 47184 -> 47184/ssl  内网 HTTPS 桌面（-> zcode:7183）
+    ports:
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_STATPREV_PORT:-40881}:80"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV1_PORT:-40882}:81"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DYNPREV2_PORT:-40883}:82"
+      - "${EXT_BIND_ADDR:-0.0.0.0}:${EXT_DESKTOP_HTTPS_PORT:-47184}:47184"
+    volumes:
+      - ./workspace/preview:/usr/share/nginx/html/preview:ro
+      - ./workspace/preview2:/usr/share/nginx/html/preview2:ro
+      - ./config/nginx-preview-static.conf:/etc/nginx/conf.d/preview-static.conf:ro
+      - ./config/nginx-preview-dyn.conf:/etc/nginx/conf.d/preview-dyn.conf:ro
+      - ./config/nginx-preview2-dyn.conf:/etc/nginx/conf.d/preview2-dyn.conf:ro
+      - ./config/nginx-desktop-https.conf:/etc/nginx/conf.d/desktop-https.conf:ro
+      - ./config/certs:/etc/nginx/certs:ro
+    depends_on:
+      zcode:
+        condition: service_healthy
+
+  # ---------- Cloudflare Tunnel：公网唯一通道（纯出站） ----------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # 国内服务器可用加速源：
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/cloudflare/cloudflared:latest
+    container_name: zcode-cloudflared
+    restart: unless-stopped
+    networks: [znet]
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config/config.yml run
+    volumes:
+      - ./config/tunnel-credentials.json:/etc/cloudflared/credentials/tunnel-credentials.json:ro
+      - ./config/config.yml:/etc/cloudflared/config/config.yml:ro
+    depends_on:
+      zcode:
+        condition: service_healthy
+      preview:
+        condition: service_started
+
+networks:
+  znet:
+    driver: bridge
+
+volumes:
+  zcode-data: {}
+  edge-profile: {}
+  singbox-config: {}
+  extra1: {}
+  extra2: {}
+  extra3: {}
