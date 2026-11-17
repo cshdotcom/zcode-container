@@ -6,20 +6,20 @@ originRequest:
   connectTimeout: 10s
 
 ingress:
-  - hostname: zcode.910500.xyz
+  - hostname: zcode.example-a.com
     service: http://zcode:3030
-  - hostname: zcode.nodebyte.cn
+  - hostname: zcode.example-b.com
     service: http://zcode:3030
-  - hostname: desktop.910500.xyz
+  - hostname: desktop.example-a.com
     service: http://zcode:7183
-  - hostname: desktop.nodebyte.cn
+  - hostname: desktop.example-b.com
     service: http://zcode:7183
-  - hostname: preview.910500.xyz
+  - hostname: preview.example-a.com
     service: http://preview:81
-  - hostname: preview.nodebyte.cn
+  - hostname: preview.example-b.com
     service: http://preview:81
-  - hostname: preview2.910500.xyz
+  - hostname: preview2.example-a.com
     service: http://preview:82
-  - hostname: preview2.nodebyte.cn
+  - hostname: preview2.example-b.com
     service: http://preview:82
   - service: http_status:404
